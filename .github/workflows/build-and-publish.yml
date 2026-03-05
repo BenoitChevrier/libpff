@@ -176,7 +176,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: pypa/cibuildwheel@v2.16.5
         env:
-          CIBW_BUILD: cp313-manylinux_x86_64
+          CIBW_BUILD: cp313-manylinux*x86_64
           CIBW_BEFORE_ALL: |
             ./synclibs.sh
             ./autogen.sh
@@ -186,11 +186,13 @@ jobs:
         with:
           output-dir: dist/
       - name: Test wheel
-        run: pip install dist/*.whl && python -c "import pypff; print(pypff.get_version())"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wheel-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: dist/*.whl
+        run: |
+          pip install dist/*.whl --find-links dist/
+          python -c "import pypff; print(pypff.get_version())"
+            - uses: actions/upload-artifact@v4
+              with:
+                name: wheel-${{ matrix.os }}-py${{ matrix.python-version }}
+                path: dist/*.whl
 
 
   # ──────────────────────────────────────────────
