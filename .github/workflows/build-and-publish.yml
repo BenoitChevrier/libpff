@@ -112,12 +112,10 @@ jobs:
           python setup.py bdist_wheel
           Get-ChildItem dist\*.whl | ForEach-Object { Write-Host "Produced: $_" }
 
-      - name: Repair wheel (bundle DLLs)
+      - name: Check wheel
         shell: powershell
         run: |
-          Write-Host "==> Repairing wheel with delvewheel..."
-          $wheel = Get-ChildItem dist\*.whl | Select-Object -First 1
-          delvewheel repair --add-path "vs2022\Release\x64" -w dist\ $wheel.FullName
+          Write-Host "==> Wheel produced:"
           Get-ChildItem dist\*.whl
 
       - name: Test wheel
