@@ -172,15 +172,19 @@ jobs:
         run: ./synclibs.sh && ./autogen.sh
       - name: Install packaging tools
         run: pip install build wheel setuptools auditwheel
-      - name: Configure and build
-        run: ./configure --enable-python --with-pyprefix --disable-shared-libs && make
-      - name: Build wheel
-        run: python setup.py bdist_wheel
-      - name: Repair wheel (Linux)
+      - name: Build wheel (manylinux)
         if: runner.os == 'Linux'
-        run: |
-          auditwheel repair dist/*.whl --plat manylinux2014_x86_64 -w dist/
-          rm dist/*-linux_x86_64.whl
+        uses: pypa/cibuildwheel@v2.16.5
+        env:
+          CIBW_BUILD: cp313-manylinux_x86_64
+          CIBW_BEFORE_ALL: |
+            ./synclibs.sh
+            ./autogen.sh
+            ./configure --enable-python --with-pyprefix --disable-shared-libs
+            make
+          CIBW_BUILD_VERBOSITY: 1
+        with:
+          output-dir: dist/
       - name: Test wheel
         run: pip install dist/*.whl && python -c "import pypff; print(pypff.get_version())"
       - uses: actions/upload-artifact@v4
