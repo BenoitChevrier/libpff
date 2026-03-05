@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=77.0.0", "wheel"]
 build-backend = "setuptools.backends.legacy:build"
 
 [project]
@@ -7,7 +7,6 @@ name = "libpff-python-windows"
 version = "20231205"
 description = "Python bindings for libpff — with Windows wheels"
 readme = "README"
-license = "LGPL-3.0-or-later"
 requires-python = ">=3.9"
 
 authors = [
@@ -29,3 +28,4 @@ classifiers = [
 
 [tool.setuptools.packages.find]
 include = ["pypff*"]
+
