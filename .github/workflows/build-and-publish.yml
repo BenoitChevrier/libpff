@@ -179,11 +179,10 @@ jobs:
       - name: Build wheel
         run: python setup.py bdist_wheel
 
-      - name: Repair wheel (Linux — manylinux_2_28)
+      - name: Skip repair — keep linux wheel as-is
         if: runner.os == 'Linux'
         run: |
-          auditwheel repair dist/*.whl --plat manylinux_2_28_x86_64 -w dist/
-          rm dist/*-linux_x86_64.whl
+          echo "Skipping auditwheel repair — wheel targets Ubuntu 24.04+"
 
       - name: Test wheel
         run: |
