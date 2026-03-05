@@ -7,7 +7,7 @@ name = "libpff-python-windows"
 version = "20231205"
 description = "Python bindings for libpff — with Windows wheels"
 readme = "README"
-license = { text = "LGPL-3.0-or-later" }
+license = "LGPL-3.0-or-later"
 requires-python = ">=3.9"
 
 authors = [
@@ -19,11 +19,13 @@ keywords = ["pst", "ost", "outlook", "forensics", "libpff"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Operating System :: Microsoft :: Windows",
-  "Operating System :: POSIX :: Linux",
-  "Operating System :: MacOS",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
 ]
+
+[tool.setuptools.packages.find]
+include = ["pypff*"]
