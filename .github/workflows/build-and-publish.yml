@@ -1,15 +1,8 @@
 # ============================================================
-# GitHub Actions — Build & Publish libpff-python (Windows)
+# GitHub Actions — Build libpff-python (Windows uniquement)
 # ============================================================
-#
-# PRÉREQUIS :
-#   1. Forker https://github.com/libyal/libpff
-#   2. Créer un token PyPI sur pypi.org → Account Settings → API Tokens
-#   3. Ajouter le secret dans GitHub : Settings → Secrets → PYPI_TOKEN
-#
-# DÉCLENCHEMENT :
-#   - Push d'un tag "v*"  ex: git tag v20231205 && git push --tags
-#   - Ou manuellement via workflow_dispatch
+# VERSION TEST — Unix et publish commentés
+# Une fois Windows OK, décommenter build_unix et publish
 # ============================================================
 
 name: Build & Publish libpff-python Windows Wheel
@@ -18,7 +11,7 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:   # permet de déclencher manuellement depuis l'UI GitHub
+  workflow_dispatch:
 
 jobs:
 
@@ -30,69 +23,64 @@ jobs:
     runs-on: windows-latest
 
     strategy:
-      fail-fast: false   # si une version échoue, les autres continuent
+      fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
 
     steps:
-      # 1. Récupérer le code source du fork
       - name: Checkout source
         uses: actions/checkout@v4
         with:
-          submodules: false   # libpff gère ses dépendances via synclibs.ps1
+          submodules: false
 
-      # 2. Installer Python dans la bonne version
       - name: Setup Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           architecture: x64
 
-      # 3. Synchroniser les sous-bibliothèques C (libcdata, libcerror, etc.)
-      #    synclibs.ps1 clone ~15 repos libyal depuis GitHub
+      # FIX : $ErrorActionPreference + 2>&1 empêche PowerShell de
+      # confondre les messages stderr de git avec de vraies erreurs
       - name: Sync internal C libraries
         shell: powershell
         run: |
+          $ErrorActionPreference = 'Continue'
           Write-Host "==> Syncing libyal sub-libraries..."
-          .\synclibs.ps1
+          .\synclibs.ps1 2>&1
           if ($LASTEXITCODE -ne 0) {
             Write-Error "synclibs.ps1 failed with exit code $LASTEXITCODE"
             exit 1
           }
 
-      # 4. Télécharger zlib (nécessaire pour la compression DEFLATE des OST)
       - name: Sync zlib
         shell: powershell
         run: |
+          $ErrorActionPreference = 'Continue'
           Write-Host "==> Syncing zlib..."
-          .\synczlib.ps1
+          .\synczlib.ps1 2>&1
           if ($LASTEXITCODE -ne 0) {
             Write-Error "synczlib.ps1 failed with exit code $LASTEXITCODE"
             exit 1
           }
 
-      # 5. Générer les fichiers de projet Visual Studio
-      #    autogen.ps1 s'appuie sur vstools pour convertir les .sln
       - name: Generate VS project files
         shell: powershell
         run: |
+          $ErrorActionPreference = 'Continue'
           Write-Host "==> Generating Visual Studio project files..."
-          # vstools est nécessaire pour autogen.ps1
           if (-Not (Test-Path "..\vstools")) {
-            git clone https://github.com/libyal/vstools.git ..\vstools
+            git clone https://github.com/libyal/vstools.git ..\vstools 2>&1
           }
-          .\autogen.ps1
+          .\autogen.ps1 2>&1
           if ($LASTEXITCODE -ne 0) {
             Write-Error "autogen.ps1 failed with exit code $LASTEXITCODE"
             exit 1
           }
 
-      # 6. Compiler avec MSBuild + Visual Studio 2022
-      #    On détecte dynamiquement le chemin Python pour cette version de la matrix
       - name: Build with MSBuild
         shell: powershell
         run: |
-          # Détecter le chemin Python installé par setup-python
+          $ErrorActionPreference = 'Continue'
           $PythonExe = (Get-Command python).Source
           $PythonPath = Split-Path $PythonExe -Parent
           Write-Host "==> Python path: $PythonPath"
@@ -103,50 +91,41 @@ jobs:
             -Platform x64 `
             -PythonPath $PythonPath `
             -VSToolsPath "..\vstools" `
-            -VSToolsOptions "--extend-with-x64 --no-python-dll"
+            -VSToolsOptions "--extend-with-x64 --no-python-dll" 2>&1
 
           if ($LASTEXITCODE -ne 0) {
             Write-Error "build.ps1 failed with exit code $LASTEXITCODE"
             exit 1
           }
 
-      # 7. Installer les outils de packaging
       - name: Install packaging tools
         run: |
           python -m pip install --upgrade pip
           pip install build wheel setuptools twine delvewheel
 
-      # 8. Créer le wheel .whl
       - name: Build wheel
         shell: powershell
         run: |
           Write-Host "==> Building wheel..."
           python setup.py bdist_wheel
-          # Lister les wheels produits
           Get-ChildItem dist\*.whl | ForEach-Object { Write-Host "Produced: $_" }
 
-      # 9. Réparer le wheel : bundler les DLLs Windows nécessaires
-      #    Sans cette étape, le wheel ne fonctionnerait que sur la machine de build
       - name: Repair wheel (bundle DLLs)
         shell: powershell
         run: |
-          Write-Host "==> Repairing wheel with delvewheel (bundling DLLs)..."
+          Write-Host "==> Repairing wheel with delvewheel..."
           $wheel = Get-ChildItem dist\*.whl | Select-Object -First 1
           delvewheel repair --add-path "vs2022\Release\x64" -w dist\ $wheel.FullName
-          Write-Host "==> Repaired wheels:"
           Get-ChildItem dist\*.whl
 
-      # 10. Tester le wheel installé
       - name: Test wheel
         shell: powershell
         run: |
-          Write-Host "==> Installing and testing wheel..."
+          Write-Host "==> Testing wheel..."
           $wheel = Get-ChildItem dist\*.whl | Select-Object -First 1
           pip install $wheel.FullName
           python -c "import pypff; print('pypff version:', pypff.get_version()); print('OK')"
 
-      # 11. Upload du wheel comme artifact GitHub
-      #     Sera récupéré par le job publish
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
         with:
@@ -155,108 +134,74 @@ jobs:
           retention-days: 7
 
   # ──────────────────────────────────────────────
-  # JOB 2 : Build Linux + macOS (bonus, déjà dispo sur PyPI mais utile)
+  # JOB 2 : Build Linux + macOS — DÉSACTIVÉ pour le moment
+  # Décommenter une fois Windows OK
   # ──────────────────────────────────────────────
-  build_unix:
-    name: ${{ matrix.os }} — Python ${{ matrix.python-version }}
-    runs-on: ${{ matrix.os }}
 
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
-
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
-
-      - name: Setup Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      # Dépendances système
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y git autoconf automake autopoint libtool pkg-config
-
-      - name: Install system dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install autoconf automake gettext libtool pkg-config gnu-sed
-          echo "/usr/local/opt/gettext/bin" >> $GITHUB_PATH
-
-      # Préparer les sources
-      - name: Sync libs and autogen
-        run: |
-          ./synclibs.sh
-          ./autogen.sh
-
-      # Installer les outils Python
-      - name: Install packaging tools
-        run: pip install build wheel setuptools auditwheel
-
-      # Compiler et builder le wheel
-      - name: Configure and build
-        run: |
-          ./configure --enable-python --with-pyprefix --disable-shared-libs
-          make
-
-      - name: Build wheel
-        run: python setup.py bdist_wheel
-
-      # Réparer le wheel Linux pour le rendre portable (manylinux)
-      - name: Repair wheel (Linux — auditwheel)
-        if: runner.os == 'Linux'
-        run: |
-          auditwheel repair dist/*.whl --plat manylinux2014_x86_64 -w dist/
-          rm dist/*-linux_x86_64.whl   # supprimer le wheel non-portable
-
-      - name: Test wheel
-        run: |
-          pip install dist/*.whl
-          python -c "import pypff; print('pypff version:', pypff.get_version())"
-
-      - name: Upload wheel artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheel-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: dist/*.whl
+  # build_unix:
+  #   name: ${{ matrix.os }} — Python ${{ matrix.python-version }}
+  #   runs-on: ${{ matrix.os }}
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       os: [ubuntu-latest, macos-latest]
+  #       python-version: ["3.9", "3.10", "3.11", "3.12"]
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-python@v5
+  #       with:
+  #         python-version: ${{ matrix.python-version }}
+  #     - name: Install system dependencies (Linux)
+  #       if: runner.os == 'Linux'
+  #       run: |
+  #         sudo apt-get update -q
+  #         sudo apt-get install -y git autoconf automake autopoint libtool pkg-config
+  #     - name: Install system dependencies (macOS)
+  #       if: runner.os == 'macOS'
+  #       run: |
+  #         brew install autoconf automake gettext libtool pkg-config gnu-sed
+  #         echo "/usr/local/opt/gettext/bin" >> $GITHUB_PATH
+  #     - name: Sync libs and autogen
+  #       run: ./synclibs.sh && ./autogen.sh
+  #     - name: Install packaging tools
+  #       run: pip install build wheel setuptools auditwheel
+  #     - name: Configure and build
+  #       run: ./configure --enable-python --with-pyprefix --disable-shared-libs && make
+  #     - name: Build wheel
+  #       run: python setup.py bdist_wheel
+  #     - name: Repair wheel (Linux)
+  #       if: runner.os == 'Linux'
+  #       run: |
+  #         auditwheel repair dist/*.whl --plat manylinux2014_x86_64 -w dist/
+  #         rm dist/*-linux_x86_64.whl
+  #     - name: Test wheel
+  #       run: pip install dist/*.whl && python -c "import pypff; print(pypff.get_version())"
+  #     - uses: actions/upload-artifact@v4
+  #       with:
+  #         name: wheel-${{ matrix.os }}-py${{ matrix.python-version }}
+  #         path: dist/*.whl
 
   # ──────────────────────────────────────────────
-  # JOB 3 : Publier tous les wheels sur PyPI
-  #          Attend que build_windows ET build_unix soient terminés
+  # JOB 3 : Publish — DÉSACTIVÉ pour le moment
+  # Décommenter une fois Windows OK
   # ──────────────────────────────────────────────
-  publish:
-    name: Publish to PyPI
-    needs: [build_windows, build_unix]
-    runs-on: ubuntu-latest
 
-    # Ne publier que sur un vrai tag (pas sur workflow_dispatch sans tag)
-    if: startsWith(github.ref, 'refs/tags/v')
-
-    steps:
-      # Récupérer TOUS les artifacts des jobs précédents
-      - name: Download all wheels
-        uses: actions/download-artifact@v4
-        with:
-          pattern: wheel-*      # récupère tous les artifacts qui commencent par "wheel-"
-          merge-multiple: true  # les fusionne dans un seul dossier
-          path: dist/
-
-      # Afficher ce qu'on s'apprête à publier
-      - name: List wheels to publish
-        run: |
-          echo "==> Wheels to publish:"
-          ls -la dist/
-
-      # Publier sur PyPI via l'action officielle
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_TOKEN }}
-          skip-existing: true   # ne pas échouer si la version existe déjà
-          verbose: true
+  # publish:
+  #   name: Publish to PyPI
+  #   needs: [build_windows]   # changer en [build_windows, build_unix] quand unix réactivé
+  #   runs-on: ubuntu-latest
+  #   if: startsWith(github.ref, 'refs/tags/v')
+  #   steps:
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         pattern: wheel-*
+  #         merge-multiple: true
+  #         path: dist/
+  #     - name: List wheels
+  #       run: ls -la dist/
+  #     - name: Publish to PyPI
+  #       uses: pypa/gh-action-pypi-publish@release/v1
+  #       with:
+  #         password: ${{ secrets.PYPI_TOKEN }}
+  #         skip-existing: true
+  #         verbose: true
