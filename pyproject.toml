@@ -28,4 +28,3 @@ classifiers = [
 
 [tool.setuptools.packages.find]
 include = ["pypff*"]
-
